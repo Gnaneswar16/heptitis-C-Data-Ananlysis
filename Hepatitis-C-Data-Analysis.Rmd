@@ -1,0 +1,670 @@
+---
+title: "Heptitis C Data Analysis"
+author: "FDA"
+date: "2024-09-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+path<-"D:\\Downloads\\Downloads\\HepatitisCdata.csv"
+HepCdataset=read.csv(path)
+head(HepCdataset)
+```
+
+```{r}
+str(HepCdataset)
+```
+
+
+```{r}
+summary(HepCdataset)
+```
+```{r}
+library(ggplot2)
+#install.packages("naniar")
+library(naniar)
+gg_miss_var(HepCdataset)
+
+```
+
+```{r}
+HepCdataset$Age[is.na(HepCdataset$Age)]<-mean(HepCdataset$Age,na.rm=TRUE)
+HepCdataset$ALB[is.na(HepCdataset$ALB)]<-mean(HepCdataset$ALB,na.rm=TRUE)
+HepCdataset$ALP[is.na(HepCdataset$ALP)]<-mean(HepCdataset$ALP,na.rm=TRUE)
+HepCdataset$ALT[is.na(HepCdataset$ALT)]<-mean(HepCdataset$ALT,na.rm=TRUE)
+HepCdataset$AST[is.na(HepCdataset$AST)]<-mean(HepCdataset$AST,na.rm=TRUE)
+HepCdataset$BIL[is.na(HepCdataset$BIL)]<-mean(HepCdataset$BIL,na.rm=TRUE)
+HepCdataset$CHE[is.na(HepCdataset$CHE)]<-mean(HepCdataset$CHE,na.rm=TRUE)
+HepCdataset$CHOL[is.na(HepCdataset$CHOL)]<-mean(HepCdataset$CHOL,na.rm=TRUE)
+HepCdataset$CREA[is.na(HepCdataset$CREA)]<-mean(HepCdataset$CREA,na.rm=TRUE)
+HepCdataset$GGT[is.na(HepCdataset$GGT)]<-mean(HepCdataset$GGT,na.rm=TRUE)
+HepCdataset$PROT[is.na(HepCdataset$PROT)]<-mean(HepCdataset$PROT,na.rm=TRUE)
+
+HepCdataset$Sex = factor(HepCdataset$Sex,
+                     levels = c('f','m'),
+                     labels = c(0,1))
+```
+
+```{r}
+HepCdataset$Category = factor(HepCdataset$Category,
+                          levels = c('0=Blood Donor',
+                                     '0s=suspect Blood Donor',
+                                     '1=Hepatitis',
+                                     '2=Fibrosis',
+                                     '3=Cirrhosis'),
+                          labels = c('Blood Donor', 'suspect Blood Donor', 'Hepatitis', 'Fibrosis', 'Cirrhosis'))
+HepCdataset=subset(HepCdataset,select=-c(X))
+head(HepCdataset)
+```
+```{r}
+# Visualizing the relationship between ALT and Category
+ggplot(HepCdataset, aes(x = Category, y = ALT, fill = Category)) + 
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Distribution of ALT across Hepatitis C Categories",
+       x = "Hepatitis C Stages", y = "ALT Levels")
+
+```
+```{r}
+library(tidyverse)
+library(caret)
+theme_set(theme_bw())
+# Inspect the data
+sample_n(HepCdataset, 3)
+# Split the data into training and test set
+set.seed(123)
+training.samples <- HepCdataset$Category %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- HepCdataset[training.samples, ]
+test.data <- HepCdataset[-training.samples, ]
+```
+```{r}
+library(nnet)
+train.data$Category <- relevel(train.data$Category, ref = "Blood Donor")
+multinom_model <- multinom(Category ~ ., data = HepCdataset)
+summary(multinom_model)
+exp(coef(multinom_model))
+#head(round(fitted(multinom_model), 2))
+```
+```{r}
+# Predicting the values for train dataset
+train.data$CategoryPredicted <- predict(multinom_model, newdata = train.data, "class")
+# Building classification table
+acc_train <- table(train.data$Category, train.data$CategoryPredicted)
+# Calculating accuracy - sum of diagonal elements divided by total obs
+round((sum(diag(acc_train))/sum(acc_train))*100,2)
+```
+```{r}
+# Predicting the class for test dataset
+test.data$CategoryPredicted <- predict(multinom_model, newdata = test.data, "class")
+# Building classification table
+acc_test <- table(test.data$Category, test.data$CategoryPredicted)
+round((sum(diag(acc_test))/sum(acc_test))*100,2)
+```
+```{r}
+accuracy_mlr <- round((sum(diag(acc_test))/sum(acc_test))*100,2)
+```
+```{r}
+# Showing the relationship of ALT with Hepatitis C stages based on model insights
+ggplot(HepCdataset, aes(x = Category, y = ALT, fill = Category)) + 
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "ALT Levels across Hepatitis C Stages",
+       x = "Hepatitis C Stage", y = "ALT Levels") +
+  theme(legend.position = "none")
+```
+```{r}
+confusionMatrix(test.data$CategoryPredicted, test.data$Category)
+```
+
+
+
+
+
+
+#RandomForest
+```{r}
+#install.packages("randomForest")
+library(randomForest)
+```
+```{r}
+# Build Random Forest model
+set.seed(123)
+rf_model <- randomForest(Category ~ ., data = train.data, importance = TRUE)
+
+# Summary of the model
+print(rf_model)
+```
+
+```{r}
+# Predicting the class for the test dataset
+rf_pred <- predict(rf_model, test.data)
+
+# Model Evaluation: Confusion Matrix
+rf_cm <- confusionMatrix(rf_pred, test.data$Category)
+print(rf_cm)
+```
+```{r}
+#Accuracy
+rf_accuracy <- rf_cm$overall['Accuracy'] * 100
+cat("Random Forest Accuracy: ", round(rf_accuracy, 2), "%\n")
+
+```
+```{r}
+# Plotting importance of variables
+varImpPlot(rf_model)
+```
+
+
+
+
+
+#SVM
+```{r}
+#install.packages("e1071")
+library(e1071)
+```
+
+```{r}
+# Build SVM model
+svm_model <- svm(Category ~ ., data = train.data, kernel = "linear")
+
+# Summary of the model
+summary(svm_model)
+```
+```{r}
+# Predicting the class for the test dataset
+svm_pred <- predict(svm_model, test.data)
+
+# Model Evaluation: Confusion Matrix
+svm_cm <- confusionMatrix(svm_pred, test.data$Category)
+print(svm_cm)
+```
+```{r}
+#Accuracy
+svm_accuracy <- svm_cm$overall['Accuracy'] * 100
+cat("SVM Accuracy: ", round(svm_accuracy, 2), "%\n")
+```
+
+
+
+
+
+#Gradient Boosting model
+```{r}
+# Install and load the required package
+#install.packages("gbm")
+library(gbm)
+```
+```{r}
+# Build Gradient Boosting model
+set.seed(123)
+gbm_model <- gbm(Category ~ ., data = train.data, distribution = "multinomial", 
+                 n.trees = 100, interaction.depth = 3, shrinkage = 0.1, cv.folds = 5)
+
+# Summary of the model
+summary(gbm_model)
+```
+```{r}
+# Predicting the class for the test dataset
+gbm_pred <- predict(gbm_model, newdata = test.data, n.trees = gbm.perf(gbm_model, method="cv"), type = "response")
+gbm_pred_class <- apply(gbm_pred, 1, which.max)
+
+# Model Evaluation: Confusion Matrix
+gbm_cm <- confusionMatrix(factor(gbm_pred_class, levels = 1:5, labels = levels(test.data$Category)), test.data$Category)
+print(gbm_cm)
+```
+```{r}
+#Accuracy
+gbm_accuracy <- gbm_cm$overall['Accuracy'] * 100
+cat("Gradient Boosting Accuracy: ", round(gbm_accuracy, 2), "%\n")
+```
+
+
+
+
+
+#KNN
+```{r}
+#install.packages("class")
+#install.packages("caret")
+
+library(class)  # For KNN
+library(caret)  # For cross-validation and confusion matrix
+```
+
+```{r}
+# Function to normalize numeric columns
+normalize <- function(x) {
+  if (is.numeric(x)) {
+    return ((x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE)))  # Normalize only numeric columns
+  } else {
+    return (x)  # Return non-numeric columns as-is
+  }
+}
+
+# Replace NAs with mean for numeric columns in train and test data
+train.data[is.na(train.data)] <- lapply(train.data, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else x)
+test.data[is.na(test.data)] <- lapply(test.data, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else x)
+```
+
+```{r}
+# Normalize only the numeric features (excluding Category and Sex)
+train.data.knn <- as.data.frame(lapply(train.data[,-c(1, ncol(train.data))], normalize))  # Exclude Category (1st column)
+test.data.knn <- as.data.frame(lapply(test.data[,-c(1, ncol(test.data))], normalize))  # Exclude Category (1st column)
+
+# Add back the Category and Sex columns after normalization
+train.data.knn$Category <- train.data$Category
+train.data.knn$Sex <- train.data$Sex
+test.data.knn$Category <- test.data$Category
+test.data.knn$Sex <- test.data$Sex
+```
+
+```{r}
+# Check for NAs
+cat("NAs in train data:", sum(is.na(train.data.knn)), "\n")
+cat("NAs in test data:", sum(is.na(test.data.knn)), "\n")
+
+# Check for infinite values and replace with NA
+numeric_columns_train <- which(sapply(train.data.knn, is.numeric))
+numeric_columns_test <- which(sapply(test.data.knn, is.numeric))
+
+for (col in numeric_columns_train) {
+  train.data.knn[is.infinite(train.data.knn[[col]]), col] <- NA
+}
+
+for (col in numeric_columns_test) {
+  test.data.knn[is.infinite(test.data.knn[[col]]), col] <- NA
+}
+
+# Rechecking for NAs after handling infinite values
+cat("NAs in train data after handling infinite values:", sum(is.na(train.data.knn)), "\n")
+cat("NAs in test data after handling infinite values:", sum(is.na(test.data.knn)), "\n")
+```
+```{r}
+# Cross-validation to find the best k value
+ctrl <- trainControl(method = "cv", number = 10)  # 10-fold cross-validation
+```
+```{r}
+# Train the KNN model with different k values (from 1 to 20)
+set.seed(123)
+knn_tuned <- train(Category ~ ., data = train.data.knn, method = "knn", 
+                   tuneGrid = expand.grid(k = 1:20), trControl = ctrl)
+```
+```{r}
+# Best k value based on cross-validation
+best_k <- knn_tuned$bestTune$k
+cat("Best k value: ", best_k, "\n")
+```
+```{r}
+# Plotting accuracy vs k
+plot(knn_tuned)
+```
+```{r}
+#Predicting with the best k value using the KNN algorithm
+knn_best_pred <- knn(
+  train = train.data.knn[, -c(ncol(train.data.knn))],  # Exclude only Category
+  test = test.data.knn[, -c(ncol(test.data.knn))], 
+  cl = train.data.knn$Category, 
+  k = best_k
+)
+```
+```{r}
+#Model Evaluation: Confusion Matrix for test data
+knn_best_cm <- confusionMatrix(knn_best_pred, test.data.knn$Category)
+print(knn_best_cm)
+```
+```{r}
+#Accuracy
+knn_accuracy <- knn_best_cm$overall['Accuracy'] * 100
+cat("KNN with Best k Accuracy: ", round(knn_accuracy, 2), "%\n")
+```
+
+
+
+
+
+
+#Naive Bayes model
+```{r}
+# Build Naive Bayes model
+nb_model <- naiveBayes(Category ~ ., data = train.data)
+
+# Predicting the class for the test dataset
+nb_pred <- predict(nb_model, test.data)
+```
+
+```{r}
+#Model Evaluation: Confusion Matrix
+nb_cm <- confusionMatrix(nb_pred, test.data$Category)
+print(nb_cm)
+```
+
+```{r}
+#Accuracy
+nb_accuracy <- nb_cm$overall['Accuracy'] * 100
+cat("Naive Bayes Accuracy: ", round(nb_accuracy, 2), "%\n")
+
+```
+
+
+
+
+
+# XGBoost
+```{r}
+#install.packages("xgboost")
+library(xgboost)
+```
+```{r}
+# Checking for NAs in the training and test datasets
+cat("NAs in train data:", sum(is.na(train.data)), "\n")
+cat("NAs in test data:", sum(is.na(test.data)), "\n")
+
+# Handle NAs by replacing with the mean for numeric columns
+train.data[is.na(train.data)] <- lapply(train.data, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else x)
+test.data[is.na(test.data)] <- lapply(test.data, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else x)
+
+# Prepareing data for XGBoost
+# Ensure to select only numeric columns for the model
+train.data.xgb <- select(train.data, -Category)  # Removing the Category column
+test.data.xgb <- select(test.data, -Category)
+
+# Inspecting unique values in the training data before conversion
+for (col in names(train.data.xgb)) {
+  unique_values <- unique(train.data.xgb[[col]])
+  if (any(is.na(as.numeric(as.character(unique_values))))) {
+    cat("Column:", col, "has non-numeric values:\n", unique_values[!is.na(as.numeric(as.character(unique_values)))], "\n\n")
+  }
+}
+
+# Converting character columns to numeric, forcing coercion and handling non-numeric cases
+train.data.xgb <- as.data.frame(lapply(train.data.xgb, function(x) {
+  x <- as.character(x)  # Ensure it's character first
+  as.numeric(x)  # Convert to numeric
+}))
+test.data.xgb <- as.data.frame(lapply(test.data.xgb, function(x) {
+  x <- as.character(x)  # Ensure it's character first
+  as.numeric(x)  # Convert to numeric
+}))
+
+
+# Check for NAs after conversion
+cat("NAs in train data after conversion:", sum(is.na(train.data.xgb)), "\n")
+cat("NAs in test data after conversion:", sum(is.na(test.data.xgb)), "\n")
+```
+```{r}
+# Prepare data matrices for XGBoost
+train.data.xgb <- as.matrix(train.data.xgb)  # Convert to matrix
+test.data.xgb <- as.matrix(test.data.xgb)     # Convert to matrix
+```
+
+```{r}
+# Converting the Category into numeric labels
+train_labels <- as.numeric(train.data$Category) - 1  # Ensure labels start from 0
+test_labels <- as.numeric(test.data$Category) - 1      # Ensure labels start from 0
+```
+
+```{r}
+# Build XGBoost model
+xgb_model <- xgboost(data = train.data.xgb, label = train_labels, nrounds = 100, 
+                     objective = "multi:softmax", num_class = length(unique(train_labels)))
+```
+```{r}
+# Predicting the class for the test dataset
+xgb_pred <- predict(xgb_model, test.data.xgb)
+```
+
+```{r}
+# Model Evaluation: Confusion Matrix
+xgb_cm <- confusionMatrix(factor(xgb_pred, levels = 0:(length(unique(train_labels)) - 1), labels = levels(test.data$Category)), 
+                          test.data$Category)
+print(xgb_cm)
+```
+```{r}
+# Extract Accuracy
+xgb_accuracy <- xgb_cm$overall['Accuracy'] * 100
+cat("XGBoost Accuracy: ", round(xgb_accuracy, 2), "%\n")
+```
+
+
+
+
+
+
+#Decision Tree model
+```{r}
+#install.packages("rpart")
+library(rpart)
+```
+
+```{r}
+# Build decision tree model
+tree_model <- rpart(Category ~ ., data = train.data, method = "class")
+```
+
+```{r}
+# Predicting the class for the test dataset
+tree_pred <- predict(tree_model, test.data, type = "class")
+```
+
+```{r}
+# Model Evaluation: Confusion Matrix
+tree_cm <- confusionMatrix(tree_pred, test.data$Category)
+print(tree_cm)
+```
+
+```{r}
+#Accuracy
+tree_accuracy <- tree_cm$overall['Accuracy'] * 100
+cat("Decision Tree Accuracy: ", round(tree_accuracy, 2), "%\n")
+```
+
+
+#neural network model
+```{r}
+# Load necessary package
+library(nnet)
+```
+
+```{r}
+
+nn_model <- nnet(Category ~ ., data = train.data, size = 5, maxit = 200, linout = FALSE)
+```
+
+```{r}
+predictions <- predict(nn_model, test.data, type = "class")
+
+accuracy_neural <- mean(predictions == test.data$Category)
+print(paste("Model Accuracy:", accuracy_neural*100))
+
+```
+
+
+
+```{r}
+# Storeing  accuracies in a named vector
+accuracies <- c(
+  "Multinomial Logistic Regression" = accuracy_mlr,
+  "Random Forest" = rf_accuracy,
+  "SVM" = svm_accuracy,
+  "Gradient Boosting" = gbm_accuracy,
+  "KNN" = knn_accuracy,
+  "Naive Bayes" = nb_accuracy,
+  "XGBoost" = xgb_accuracy,
+  "Decision Tree" = tree_accuracy,
+  "Neural Network"= accuracy_neural*100
+)
+```
+
+```{r}
+#accuracies
+cat("Model Accuracies:\n")
+for (model in names(accuracies)) {
+  cat(model, ": ", round(accuracies[model], 2), "%\n")
+}
+```
+```{r}
+# Finding max and min accuracies
+max_accuracy <- max(accuracies)
+min_accuracy <- min(accuracies)
+
+max_model <- names(accuracies)[which.max(accuracies)]
+min_model <- names(accuracies)[which.min(accuracies)]
+```
+
+```{r}
+# Presenting results
+cat("Maximum Accuracy: ", round(max_accuracy, 2), "% (", max_model, ")\n", sep = "")
+cat("Minimum Accuracy: ", round(min_accuracy, 2), "% (", min_model, ")\n", sep = "")
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(randomForest)
+library(caret)
+
+set.seed(123)
+index <- sample(1:nrow(HepCdataset), 0.7 * nrow(HepCdataset))
+train_data <- HepCdataset[index, ]
+test_data <- HepCdataset[-index, ]
+
+# Select features including ALT, AST, GGT
+train_x <- train_data[, c("ALT", "AST", "GGT")] # add other relevant predictors
+test_x <- test_data[, c("ALT", "AST", "GGT")]
+
+train_y <- as.factor(train_data$Category)  # Assuming 'disease_stage' is categorical
+test_y <- as.factor(test_data$Category)
+
+# Train Random Forest model
+rf_model <- randomForest(train_x, train_y, ntree = 500)
+
+# Evaluate model
+rf_predictions <- predict(rf_model, test_x)
+confusionMatrix(rf_predictions, test_y)
+
+# Feature importance
+importance(rf_model)
+
+```
+```{r}
+hist(HepCdataset$ALT, main="Histogram of ALT", xlab="ALT Levels", col="lightblue", border="black")
+hist(HepCdataset$AST, main="Histogram of AST", xlab="AST Levels", col="lightgreen", border="black")
+hist(HepCdataset$GGT, main="Histogram of GGT", xlab="GGT Levels", col="lightcoral", border="black")
+
+```
+```{r}
+# Scale the enzyme levels (ALT, AST, GGT)
+HepCdataset$ALT <- scale(HepCdataset$ALT)
+HepCdataset$AST <- scale(HepCdataset$AST)
+HepCdataset$GGT <- scale(HepCdataset$GGT)
+
+```
+
+```{r}
+# Boxplot for ALT, AST, GGT vs. disease progression
+boxplot(ALT ~ Category, data=HepCdataset, main="ALT vs Disease Progression", xlab="Disease Progression", ylab="ALT")
+boxplot(AST ~ Category, data=HepCdataset, main="AST vs Disease Progression", xlab="Disease Progression", ylab="AST")
+boxplot(GGT ~ Category, data=HepCdataset, main="GGT vs Disease Progression", xlab="Disease Progression", ylab="GGT")
+
+```
+
+```{r}
+# Correlation between the enzymes
+cor(HepCdataset$ALT, HepCdataset$AST)
+cor(HepCdataset$ALT, HepCdataset$GGT)
+cor(HepCdataset$AST, HepCdataset$GGT)
+
+# ANOVA to see if enzyme levels differ significantly between disease categories
+anova_result <- aov(ALT ~ Category, data=HepCdataset)
+summary(anova_result)
+
+anova_result2 <- aov(AST ~ Category, data=HepCdataset)
+summary(anova_result2)
+
+anova_result3 <- aov(GGT ~ Category, data=HepCdataset)
+summary(anova_result3)
+
+```
+
+```{r}
+# Load necessary library
+library(randomForest)
+
+# Fit a Random Forest model
+rf_model <- randomForest(Category ~ ALT + AST + GGT, data=HepCdataset, ntree=500)
+print(rf_model)
+
+# Feature importance
+importance(rf_model)
+
+```
+
+```{r}
+# Assuming Category is the target variable (e.g., 0=Blood Donor, 1=Disease Progression)
+logit_model <- glm(Category ~ ALT + AST + GGT, data=HepCdataset, family=binomial)
+summary(logit_model)
+
+```
+
+```{r}
+# Load necessary library
+library(rpart)
+
+# Fit a decision tree model
+tree_model <- rpart(Category ~ ALT + AST + GGT, data=HepCdataset, method="class")
+summary(tree_model)
+
+# Plot the tree
+plot(tree_model)
+text(tree_model, use.n=TRUE)
+
+```
+
+```{r}
+# Load necessary library
+library(randomForest)
+
+# Fit a Random Forest model
+rf_model <- randomForest(Category ~ ALT + AST + GGT, data=HepCdataset, ntree=500)
+print(rf_model)
+
+# Feature importance
+importance(rf_model)
+
+```
+
+```{r}
+# Load necessary library
+library(e1071)
+
+# Fit an SVM model
+svm_model <- svm(Category ~ ALT + AST + GGT, data=HepCdataset)
+summary(svm_model)
+
+```
+
+
+```{r}
+# Predicted probabilities
+pred_probs <- predict(logit_model, type="response")
+
+# ROC curve
+library(pROC)
+roc_curve <- roc(HepCdataset$Category, pred_probs)
+plot(roc_curve, main="ROC Curve", col="blue")
+
+```
+
+
+
+
+
+
